@@ -204,6 +204,24 @@ The operator dashboard will automatically establish a WebSocket link (`ws://127.
 
 ---
 
+## ☁️ Cloud Deployment (Render.com)
+
+Deploy this application live on Render in minutes with native WebSocket support:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Apserty/Solar-PV-Digital-Twin-Simulation)
+
+### Manual Steps on Render:
+1. Sign in to [Render.com](https://render.com).
+2. Click **New +** → **Web Service**.
+3. Select your GitHub repository: `Apserty/Solar-PV-Digital-Twin-Simulation`.
+4. Configure settings (or let `render.yaml` auto-configure):
+   - **Environment**: `Python`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn backend:app --host 0.0.0.0 --port $PORT`
+5. Click **Create Web Service**. Once deployed, access your live digital twin URL!
+
+---
+
 ## 🖥️ Dashboard Walkthrough
 
 | Section | Function |
