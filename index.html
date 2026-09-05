@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Solar Plant Digital Twin Dashboard</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen p-6">
+
+  <!-- Header Section -->
+  <header class="flex flex-col md:flex-row justify-between items-start md:items-center pb-6 border-b border-slate-800 gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-emerald-400">☀️ Solar Plant Digital Twin</h1>
+      <p class="text-xs text-slate-400">Real-Time Telemetry & Predictive Maintenance Monitoring</p>
+    </div>
+    <div class="flex items-center gap-4 text-xs bg-slate-900 px-4 py-2 rounded-lg border border-slate-800">
+      <div>Status: <span id="wsStatus" class="font-bold text-amber-400">Connecting...</span></div>
+      <div>Time: <span id="timeDisplay" class="font-bold text-white">--</span></div>
+      <div>Solar Irradiance: <span id="irrDisplay" class="font-bold text-yellow-400">0.00 kW/m²</span></div>
+      <div>Ambient Temp: <span id="ambTempDisplay" class="font-bold text-sky-400">0 °C</span></div>
+    </div>
+  </header>
+
+  <!-- KPI Summary Cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
+    <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+      <div class="text-xs text-slate-400">Total Actual DC Power</div>
+      <div class="text-2xl font-bold text-emerald-400 mt-1"><span id="totalActual">0.0</span> kW</div>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+      <div class="text-xs text-slate-400">Twin Expected DC Power</div>
+      <div class="text-2xl font-bold text-sky-400 mt-1"><span id="totalExpected">0.0</span> kW</div>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+      <div class="text-xs text-slate-400">Performance Ratio (PR)</div>
+      <div class="text-2xl font-bold text-purple-400 mt-1"><span id="prRatio">0</span> %</div>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+      <div class="text-xs text-slate-400">Faults / Alerts</div>
+      <div class="text-2xl font-bold text-rose-400 mt-1"><span id="alertCount">0</span> Inverters</div>
+    </div>
+  </div>
+
+  <!-- Live Chart & Alerts Section -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    <div class="lg:col-span-2 bg-slate-900 border border-slate-800 p-4 rounded-xl">
+      <h2 class="text-sm font-bold text-slate-300 mb-3">Live Power Trajectory: Actual vs Twin Expected (kW)</h2>
+      <canvas id="generationChart" height="110"></canvas>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col">
+      <h2 class="text-sm font-bold text-slate-300 mb-3">Active Prescriptive Actions</h2>
+      <div id="alertsContainer" class="flex-1 space-y-2 overflow-y-auto max-h-60 text-xs">
+        <div class="text-slate-500">System operating normally. No active maintenance alerts.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inverter Digital Twin Array -->
+  <div>
+    <h2 class="text-lg font-bold text-slate-200 mb-4">Inverter Units & String Array Digital Twin</h2>
+    <div id="inverterGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <!-- Inverter Cards will be generated here dynamically -->
+    </div>
+  </div>
+
+  <script>
+    // 1. Chart.js Setup
+    const ctx = document.getElementById('generationChart').getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Actual Power (kW)',
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            data: [],
+            fill: true,
+            tension: 0.3
+          },
+          {
+            label: 'Twin Baseline (kW)',
+            borderColor: '#38bdf8',
+            borderDash: [5, 5],
+            data: [],
+            fill: false,
+            tension: 0.3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { ticks: { color: '#64748b' }, grid: { display: false } },
+          y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } }
+        },
+        plugins: { legend: { labels: { color: '#94a3b8' } } }
+      }
+    });
+
+    // 2. WebSocket Connection to Python Backend with Auto-Reconnect
+    function connectWebSocket() {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsHost = window.location.host || '127.0.0.1:8000';
+      const ws = new WebSocket(`${wsProtocol}//${wsHost}/ws`);
+
+      const statusEl = document.getElementById('wsStatus');
+
+      ws.onopen = () => {
+        statusEl.textContent = 'LIVE';
+        statusEl.className = 'font-bold text-emerald-400';
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = 'Disconnected (Reconnecting...)';
+        statusEl.className = 'font-bold text-rose-400';
+        setTimeout(connectWebSocket, 2000);
+      };
+
+      ws.onerror = () => {
+        statusEl.textContent = 'Connection Error';
+        statusEl.className = 'font-bold text-rose-400';
+        ws.close();
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        // Update Header & KPIs
+        document.getElementById('timeDisplay').textContent = data.timestamp;
+        document.getElementById('irrDisplay').textContent = `${data.irradiation} kW/m²`;
+        document.getElementById('ambTempDisplay').textContent = `${data.ambient_temp} °C`;
+        document.getElementById('totalActual').textContent = data.total_actual;
+        document.getElementById('totalExpected').textContent = data.total_expected;
+
+        const pr = data.total_expected > 0 ? ((data.total_actual / data.total_expected) * 100).toFixed(0) : 0;
+        document.getElementById('prRatio').textContent = Math.min(pr, 100);
+
+        // Update Chart (keep last 20 steps)
+        if (chart.data.labels.length > 20) {
+          chart.data.labels.shift();
+          chart.data.datasets[0].data.shift();
+          chart.data.datasets[1].data.shift();
+        }
+        chart.data.labels.push(data.timestamp.split(' ')[1]);
+        chart.data.datasets[0].data.push(data.total_actual);
+        chart.data.datasets[1].data.push(data.total_expected);
+        chart.update();
+
+        // Render Inverter Grid & Maintenance Alerts
+        const grid = document.getElementById('inverterGrid');
+        const alertsContainer = document.getElementById('alertsContainer');
+        grid.innerHTML = '';
+        alertsContainer.innerHTML = '';
+        
+        let faultCount = 0;
+
+        data.inverters.forEach((inv) => {
+          let statusBg = 'border-slate-800 bg-slate-900/60';
+          let badgeColor = 'bg-emerald-950 text-emerald-400 border-emerald-800';
+
+          if (inv.status === 'WARNING') {
+            statusBg = 'border-amber-500/50 bg-amber-950/20';
+            badgeColor = 'bg-amber-950 text-amber-400 border-amber-700';
+            faultCount++;
+            alertsContainer.innerHTML += `
+              <div class="p-2 bg-amber-950/40 border border-amber-800 rounded">
+                <strong>Unit ${inv.id}:</strong> ${inv.action}
+              </div>`;
+          } else if (inv.status === 'FAULT') {
+            statusBg = 'border-rose-500 bg-rose-950/20';
+            badgeColor = 'bg-rose-950 text-rose-400 border-rose-700';
+            faultCount++;
+            alertsContainer.innerHTML += `
+              <div class="p-2 bg-rose-950/40 border border-rose-800 rounded">
+                <strong>Unit ${inv.id}:</strong> ${inv.action}
+              </div>`;
+          }
+
+          grid.innerHTML += `
+            <div class="border ${statusBg} rounded-xl p-3 flex flex-col justify-between">
+              <div class="flex justify-between items-center mb-2">
+                <span class="font-bold text-xs text-white">ID: ${inv.id}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded border ${badgeColor}">${inv.status}</span>
+              </div>
+              <div class="text-[11px] space-y-1 text-slate-400">
+                <div>Act: <span class="text-white font-semibold">${inv.actual_dc} kW</span></div>
+                <div>Exp: <span>${inv.expected_dc} kW</span></div>
+                <div>Temp: <span>${inv.temp} °C</span></div>
+              </div>
+            </div>`;
+        });
+
+        document.getElementById('alertCount').textContent = faultCount;
+        if (faultCount === 0) {
+          alertsContainer.innerHTML = '<div class="text-slate-500">All inverter units operating nominally.</div>';
+        }
+      };
+    }
+
+    connectWebSocket();
+  </script>
+</body>
+</html>
